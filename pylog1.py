@@ -1,4 +1,5 @@
 #python学习笔记1之python基础，函数，高级特性，函数式编程
+#难点：装饰器
 
 
 #!/user/bin/env python3
