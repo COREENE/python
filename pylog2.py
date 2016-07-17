@@ -1,4 +1,4 @@
-#python 学习笔记2之模块，面向对象编程，面向对象高级编程
+#python 学习笔记2之模块，面向对象编程，面向对象高级编程，错误调试和测试
 #难点：metaclass元类
 
 #模块
@@ -40,7 +40,7 @@ pip install Pillow #通过包管理工具pip安装Pillow
 
 
 #面向对象编程Object Oriented Programming
-#类Class和实例Instance
+#类Class和实例Instance“
 class Student(object):  #object是父类
     def __init__(self, name, score): #self指向创建实例本身
         self.name = name
@@ -374,11 +374,12 @@ Out[1]:[1]
 
 
 #错误、调试和测试
+#except捕获错误
 try:
     print('try...')
     r = 10 / 0  #此处发生错误，跳转至except语句块
     print('result:', r)
-except ValueError as e:
+except ValueError as e: #异常类型;异常对象(ValueError的Instance)
     print('ValueError:', e)
 except ZeroDivisionError as e:
     print('ZeroDivisionError:', e)
@@ -386,11 +387,11 @@ else: #当没有错误发生时，自动执行else语句
     print('no error!')
 finally:  #一定被执行
     print('finally...')
-print('END')
+print('END')  #有错误发生时不执行
 #except不但捕获该类型的错误，还把其子类也“一网打尽”
 #try...except捕获错误可以跨越多层调用
 
-# err_logging.py
+#logging 记录错误
 import logging
 def foo(s):
     return 10 / int(s)
@@ -405,8 +406,7 @@ main()
 print('END')
 #程序打印完错误信息后会继续执行，并正常退出
 
-#抛出错误
-# err_raise.py
+#raise抛出错误 抛出错误后接下来的语句不会执行
 class FooError(ValueError): #定义一个错误的class
     pass
 def foo(s):
@@ -414,8 +414,115 @@ def foo(s):
     if n==0:
         raise FooError('invalid value: %s' % s)
     return 10 / n
+#xcept中raise一个Error，还可以把一种类型的错误转化成另一种类型    
+try:
+    10 / 0
+except ZeroDivisionError:
+    raise ValueError('input error!')
 
 #调试
+#assert
+def foo(s):
+    n = int(s)
+    assert n != 0, 'n is zero!'
+    return 10 / n
+#assert断言 如果断言失败，assert语句本身就会抛出AssertionError
+#启动Python解释器时可以用-O参数来关闭assert #python -O err.py
+
+#logging
+import logging
+logging.basicConfig(level=logging.INFO) #配置
+s = '0'
+n = int(s)
+logging.info('n = %d' % n)
+print(10 / n)
+#可指定记录信息的级别，有DEBUG，INFO，WARNING，ERROR
+
+#pdb 启动：python3 -m pdb err.py
+#pdb.set_tcace()
+import pdb
+s = '0'
+n = int(s)
+pdb.set_trace() # 运行到这里会自动暂停
+print(10 / n)
+#break 或 b 设置断点       ;continue 或 c 继续执行程序 
+#list 或 l 查看当前行的代码段      ;step 或 s 进入函数 
+#return 或 r 执行代码直到从当前函数返回 
+#exit 或 q 中止并退出      ;next 或 n 执行下一行 
+#p 变量名 打印变量的值     ;help 帮助
 
 
+#单元测试
+#mydict.py
+class Dict(dict):
+    def __init__(self, **kw):
+        super().__init__(**kw) #super()调用父类方法
+    def __getattr__(self, key):
+        try:
+            return self[key]
+        except KeyError:
+            raise AttributeError(r"'Dict' object has no attribute '%s'" % key)
+    def __setattr__(self, key, value):
+        self[key] = value
+#mydict_test.py
+import unittest  #unittest测试模块
+from mydict import Dict
+class TestDict(unittest.TestCase): #(unittest封测的标准类)
+#测试方法以test开头，否则测试的时候不会被执行
+    def test_init(self): #测验Dict()中key-valve是否匹配
+        d = Dict(a=1, b='test') 
+        self.assertEqual(d.a, 1) #断言值结果与1相等
+        self.assertEqual(d.b, 'test')
+        self.assertTrue(isinstance(d, dict))#检验Dict()是否是dict类型
+    def test_key(self):  #检测d['key']赋值
+        d = Dict()
+        d['key'] = 'value'
+        self.assertEqual(d.key, 'value')
+    def test_attr(self): #检验属性赋值
+        d = Dict()
+        d.key = 'value'
+        self.assertTrue('key' in d)
+        self.assertEqual(d['key'], 'value') #相互调用
+    def test_keyerror(self):   #抛出key法输入未存在key的错误
+        d = Dict()
+        with self.assertRaises(KeyError): #断言期待抛出指定类型的Error
+            value = d['empty'] #通过d['empty']访问不存在的key时，抛出KeyError
+    def test_attrerror(self):   #抛出属性赋值法输入未存在key的错误
+        d = Dict()
+        with self.assertRaises(AttributeError):
+            value = d.empty #通过d.empty访问不存在的key时，抛出AttributeError
+	def setUp(self): #连接数据库
+		print('setUp...')   
+    def tearDown(self): #关闭数据库
+        print('tearDown...')   
+#运行单元测试 
+#方式1
+if __name__ == '__main__':
+    unittest.main()  #在mydict_test.py的最后加上两行代码
+python mydict_test.py #命令行直接运行
+#方式2  在命令行通过参数-m unittest直接运行单元测试（推荐做法）
+python -m unittest mydict_test
+ 
 
+#文档测试 doctest
+#test.py  注意：>>> 后面有空格！
+def abs(n):
+ '''
+    Function to get absolute value of number.
+    Example:
+    >>> abs(1)
+    1 
+    >>> abs(-1)
+    1
+    >>> abs(0)
+    0
+    '''
+    return n if n >= 0 else (-n)
+if __name__=='__main__':
+    import doctest
+    doctest.testmod()
+#交互环境运行 如果python test.py -v 显示具体步骤
+>>> d2['empty']
+Traceback (most recent call last):
+    ...  #省略
+KeyError: 'empty'
