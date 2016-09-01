@@ -1,4 +1,4 @@
-#python 学习笔记4之正则表达式
+#python 学习笔记4之正则表达式,常用内建模块，常用第三方模块，virtualenv，图形界面
 
 
 #正则表达式
@@ -159,4 +159,226 @@ True
 True
 # namedtuple('名称', [属性list]):
 Circle = namedtuple('Circle', ['x', 'y', 'r'])
+
+#deque
+#append() pop() appendleft() popleft()
+
+#defaultdict 引用的key不存在时抛出默认值
+defaultdict(lambda:'N/A')
+
+#OrderedDict 保持key的顺序,按插入顺序排列
+od=OrderedDict([('a',1),('b',2),('c',3)])
+
+#Counter 计数器
+from collections import Counter
+c=Counter()
+for ch in 'programming':
+	c[ch]=c[ch]+1
+>>>c
+Counter(['g':2,'m':2,'r':2,'a':1...])
+
+
+#base64  通过查表的编码方法，适用于小段内容的编码
+#3字节的二进制数据编码为4字节的文本数据
+#将3个字节=24bit，划为4组，每组6个bit
+#如果二进制数据不是3的倍数，在编码末尾加 =
+>>>base64.b64encode(b'i\xb7\x1d\xfb\xef\xff')
+b'abcd++//'
+>>>base64.urlsafe_b64encode(b'i\xb7\x1d\xfb\xef\xff')
+b'abcd--__' #+和/变成-和_
+
+'abcd' -> 'YWJjZA==' #标准Base64
+'abcd' -> 'YWJjZA'
+ #自动去掉=，解码时加上=使Base64字符串长度变成4的倍数
+
+
+#struct
+>>>import struct
+>>>struct.pack('>I',10240099)
+b'\x00\x9c@c'
+# > 表示字节顺序是big-endian，即网络序，I表示4字节无符号整数
+>>>struct.unpack('>IH',b'\xf0\xf0\xf0\xf0\x80\x80')
+(4042322160,32896)
+# >IH 后面bytes依次变为I:4字节无符号整数和H：2字节无符号整数
+
+
+#hashlib  摘要算法
+# MD5
+import hashlib
+md5 = hashlib.md5()
+md5.update('how to use md5 in python hashlib?'.encode('utf-8'))
+print(md5.hexdigest())
+#如果数据量很大可分块多次调用update()
+d5.update('how to use md5 in'.encode('utf-8'))
+d5.update('python hashlib?'.encode('utf-8'))
+print(md5.hexdigest()) #结果是128 bit，通常用32位16进制字符串表示
+
+# SHA1
+import hashlib
+md5 = hashlib.sha1()
+d5.update('how to use md5 in'.encode('utf-8'))
+d5.update('python hashlib?'.encode('utf-8'))
+print(sha1.hexdigest()) #结果是160 bit，通常用40位16进制字符串表示
+
+#比SHA1更安全的算法是SHA256和SHA512，但越安全越慢且摘要长度长
+
+#加盐
+def calc_md5(password):
+	return get_md5(password + 'the-Salt')
+
+
+#itertools 返回值是Iterator
+>>>import itertools
+>>>natuals=itertools.count(1)
+>>>for n in natuals:
+... print(n)
+1
+2
+3
+...
+#count()创造一个无限的迭代器，Ctrl+C退出
+
+cycle() #把传入的一个序列无线重复下去
+repeat('A',3) #把一个元素无线重复下去,可限定重复次数
+
+#takewhile() 根据条件判断截取一个有限序列
+>>>natuals = itertools.count(1)
+>>>ns = itertools.takewhile(lambda x:x<=10,natuals)
+>>>list(ns)
+[1,2,3,4,5,6,7,8,9,10]
+
+#chain() 把一组迭代对象串联形成更大的迭代器
+>>>for  c in itertools.chain('ABC','XYZ'):
+>>>print(c)
+# 迭代效果：'A''B''C''X''Y''Z'
+
+#groupby() 把迭代器中相邻的重复元素挑出来放在一起
+>>>for key,group in itertools.groupby('AAABBBCCAAA'):
+	print(key,list(group))
+A['A','A','A']
+B['B','B','B']
+C['C','C']
+A['A','A','A']
+
+>>>for key,group in itertools.groupby('AaaBBbcCAAa',lambda c:c.upper()):
+	print(key,list(group))
+A['A','a','a']
+B['B','B','b']
+C['c','C']
+A['A','A','a']
+
+
+#XML
+#DOM占用内存大，解析慢，可遍历树的节点 
+#SAX流模式，边读边解析，占用内存小，解析快，需要自己处理事件
+
+
+#HTMLParser
+
+#urllib
+
+
+#PIL
+from PIL import Image, ImageFilter
+# 打开一个jpg图像文件，注意是当前路径:
+im = Image.open('test.jpg')
+# 获得图像尺寸:
+w, h = im.size
+print('Original image size: %sx%s' % (w, h))
+# 缩放到50%:
+im.thumbnail((w//2, h//2))
+print('Resize image to: %sx%s' % (w//2, h//2))
+# 把缩放后的图像用jpeg格式保存:
+im.save('thumbnail.jpg', 'jpeg')
+# 应用模糊滤镜:
+im2 = im.filter(ImageFilter.BLUR)
+im2.save('blur.jpg', 'jpeg')
+
+#随机生成字母验证码
+from PIL import Image, ImageDraw, ImageFont, ImageFilter
+import random
+# 随机字母:
+def rndChar():
+    return chr(random.randint(65, 90))
+# 随机颜色1:
+def rndColor():
+    return (random.randint(64, 255), random.randint(64, 255), random.randint(64, 255))
+# 随机颜色2:
+def rndColor2():
+    return (random.randint(32, 127), random.randint(32, 127), random.randint(32, 127))
+# 240 x 60:
+width = 60 * 4
+height = 60
+image = Image.new('RGB', (width, height), (255, 255, 255))
+# 创建Font对象:
+font = ImageFont.truetype('C:/Windows/Fonts/Arial.ttf', 36)
+# 创建Draw对象:
+draw = ImageDraw.Draw(image)
+# 填充每个像素:
+for x in range(width):
+    for y in range(height):
+        draw.point((x, y), fill=rndColor())
+# 输出文字:
+for t in range(4):
+    draw.text((60 * t + 10, 10), rndChar(), font=font, fill=rndColor2())
+# 模糊:
+image = image.filter(ImageFilter.BLUR)
+image.save('code.jpg', 'jpeg')
+
+
+#virtualenv 为一个应用创建一套“隔离”的Python运行环境
+
+
+#图形界面
+from tkinter import * #导入Tkinter包的所有内容
+import tkinter.messagebox as messagebox #文本框
+#Frame派生一个Application类，这是所有Widget的父容器
+class Application(Frame):
+    def __init__(self, master=None):
+        Frame.__init__(self, master)
+        self.pack() 
+        self.createWidgets()
+    def createWidgets(self):
+        self.nameInput = Entry(self)
+        self.nameInput.pack()
+        self.alertButton = Button(self, text='Hello', command=self.hello)
+        self.alertButton.pack() #pack()方法把Widget加入到父容器中，并实现布局
+    def hello(self):
+        name = self.nameInput.get() or 'world'
+        messagebox.showinfo('Message', 'Hello, %s' % name)
+#实例化Application，并启动消息循环
+app = Application()
+# 设置窗口标题:
+app.master.title('Hello World')
+# 主消息循环:
+app.mainloop()
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
