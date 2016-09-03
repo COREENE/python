@@ -1,4 +1,4 @@
-#python 学习笔记5之网络编程，电子邮件
+#python 学习笔记5之网络编程，电子邮件,数据库
 
 #TCP编程 建立可靠连接，并且通信双方都可以以流的形式发送数据
 
@@ -30,6 +30,8 @@ print(header.decode('utf-8'))
 with open('sina.html', 'wb') as f:
     f.write(html)
 
+
+
 #服务器
 import socket,threading,time
 def tcplink(sock, addr):  #tcplink定义的代码应该放在调用之前
@@ -56,6 +58,7 @@ while True:
     # 创建新线程来处理TCP连接:
     t = threading.Thread(target=tcplink, args=(sock, addr))
     t.start()
+    
 #用来测试的客户端程序
 import socket
 s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -72,6 +75,7 @@ s.close()
 
 #客户端程序运行完毕就退出，服务器程序会永远运行下去，必须按Ctrl+C退出程序
 #同一个端口，被一个Socket绑定了以后，就不能被别的Socket绑定了
+
 
 
 #UDP编程 面向无连接的协议
@@ -98,6 +102,11 @@ for data in [b'Michael', b'Tracy', b'Sarah']:
 s.close()
  
 #服务器绑定UDP端口和TCP端口互不冲突
+
+
+
+
+
 
 
 #电子邮件
@@ -205,99 +214,156 @@ Message
       +- MIMEImage #作为附件的图片
 
 
-#POP3收取邮件
+
+
+
+
+POP3收取邮件
 #1.用poplib把邮件的原始文本下载到本地；2.用email解析原始文本，还原为邮件对象
 import poplib
 from email.parser import Parser
-from email.header import decode_header
-from email.utils import parseaddr
+from email.header import decode_header #读取头文件信息
+from email.utils import parseaddr #解析email地址
+from email.message import Message
+#内容是经过编码后的str，需要检测编码并解码
+#检测编码
+def guess_charset(msg):
+	charset = msg.get_charset()
+	if charset is None:
+		content_type = msg.get('content-Type','').lower()
+		pos = content_type.find('charset=')
+		if pos >= 0:
+			charset = content_type[pos + 8:].strip() #删除空白符
+	return charset
+#In:'abc'.find('c') Out:2
+#s.strip(rm)  删除s字符串中开头、结尾处，位于 rm删除序列的字符
+
+#decode
+def decode_str(s):
+	value, charset = decode_header(s)[0]
+	if charset:
+		value = value.decode(charset)
+	return value
+#decode_header()返回一个list，因为像Cc、Bcc这样的字段可能包含多个邮件地址
 
 #递归地打印出Message对象的层次结构：
-# indent用于缩进显示:
-def print_info(msg, indent=0):
-    if indent == 0:
-        for header in ['From', 'To', 'Subject']:
-            value = msg.get(header, '')
-            if value:
-                if header=='Subject':
-                    value = decode_str(value)
-                else:
-                    hdr, addr = parseaddr(value)
-                    name = decode_str(hdr)
-                    value = u'%s <%s>' % (name, addr)
-            print('%s%s: %s' % ('  ' * indent, header, value))
-    if (msg.is_multipart()):
-        parts = msg.get_payload()
-        for n, part in enumerate(parts):
-            print('%spart %s' % ('  ' * indent, n))
-            print('%s--------------------' % ('  ' * indent))
-            print_info(part, indent + 1)
-    else:
-        content_type = msg.get_content_type()
-        if content_type=='text/plain' or content_type=='text/html':
-            content = msg.get_payload(decode=True)
-            charset = guess_charset(msg)
-            if charset:
-                content = content.decode(charset)
-            print('%sText: %s' % ('  ' * indent, content + '...'))
-        else:
-            print('%sAttachment: %s' % ('  ' * indent, content_type))
+#indent用于缩进显示：
+def print_info(msg, indent = 0):
+	if indent == 0:
+		for header in ['From', 'To', 'Subject']:
+			value = msg.get(header,'') #get()返回给定key值
+			if value:
+				if header == 'Subject':
+					value = decode_str(value)
+				else:
+					hdr, addr = parseaddr(value)
+					name = decode_str(hdr)
+					value = u'%s<%s>' % (name, addr)
+			print('%s%s: %s' % ('  ' * indent, header, value))
+	if (msg.is_multipart()):
+		parts = msg.get_payload() #抓取邮件内容
+		for n, part in enumerate(parts): #枚举
+			print('%s part %s' % ('  ' * indent, n))
+			print('%s---------------------' % ('  ' * indent))
+			print_info(part, indent + 1)
+	else:
+		content_type = msg.get_content_type() #content内容
+		if content_type == 'text/plain' or content_type == 'text/html':
+			content = msg.get_payload(decode=True)
+			charset = guess_charset(msg) #charset字符集
+			if charset:
+				content = content.decode(charset)
+			print('%s Text: %s' % ('  ' * indent, content + '...'))
+		else:
+			print('%s Attachment: %s' % ('  ' * indent, content_type))
 
-def decode_str(s):
-    value, charset = decode_header(s)[0]
-    if charset:
-        value = value.decode(charset)
-    return value
+#输入邮件地址，口令和POP3服务器地址：
+email = input('Email:')
+password = input('Password:')
+pop3_server = input('POP3 server:')
 
-def guess_charset(msg):
-    charset = msg.get_charset()
-    if charset is None:
-        content_type = msg.get('Content-Type', '').lower()
-        pos = content_type.find('charset=')
-        if pos >= 0:
-            charset = content_type[pos + 8:].strip()
-    return charset
-
-# 输入邮件地址, 口令和POP3服务器地址:
-email = input('Email: ')
-password = input('Password: ')
-pop3_server = input('POP3 server: ')
-# 连接到POP3服务器:
+#链接到POP3服务器：
 server = poplib.POP3_SSL(pop3_server)
-# 可以打开或关闭调试信息:
+#调试级别1，可以打开或关闭调试信息：
 server.set_debuglevel(1)
-# 可选:打印POP3服务器的欢迎文字:
+#可选：打印POP3服务器的欢迎文字：
 print(server.getwelcome().decode('utf-8'))
-# 身份认证:
+
+#身份认证：
 server.user(email)
 server.pass_(password)
-# stat()返回邮件数量和占用空间:
-print('Messages: %s. Size: %s' % server.stat())
-# list()返回所有邮件的编号:
+
+#stat()返回邮件数量和占用空间：
+print('Message: %s. Size: %s' % server.stat())
+#list()返回所有邮件的编号：
 resp, mails, octets = server.list()
-# 可以查看返回的列表类似[b'1 82923', b'2 2184', ...]
+#可以查看返回的列表类似[b'1 82923', b'2 2184', ...]
 print(mails)
-# 获取最新一封邮件, 注意索引号从1开始:
-index = len(mails)
 
-for i in range(len(mails)):
-    resp, lines, octets = server.retr(len(mails) - i)
-    msg_content = b'\r\n'.join(lines).decode('utf-8')
-    msg = Parser().parsestr(msg_content)
-    print_info(msg)
-    i = i + 1
-        
-resp, lines, octets = server.retr(index)
-# lines存储了邮件的原始文本的每一行,
-# 可以获得整个邮件的原始文本:
+#获取最新一封邮件，注意索引号从1开始
+index = len(mails) #索引号
+resp, lines, octets = server.retr(index) #retr下载
+
+#lines储存了邮件的原始文本的每一行，
+#可以获得整个邮件的原始文本：
 msg_content = b'\r\n'.join(lines).decode('utf-8')
-# 稍后解析出邮件:
-msg = Parser().parsestr(msg_content)
-# 可以根据邮件索引号直接从服务器删除邮件:
-# server.dele(index)
+#稍后解析出邮件：
+msg = Parser().parsestr(msg_content) 
+print_info(msg)
 
-# 关闭连接:
+#可以根据邮件索引号直接从服务器删除邮件：
+#server.dele(index)
+#关闭连接：
 server.quit()
+
+
+
+
+
+#使用SQLite
+# 导入SQLite驱动:
+>>> import sqlite3
+# 连接到SQLite数据库
+# 数据库文件是test.db
+# 如果文件不存在，会自动在当前目录创建:
+>>> conn = sqlite3.connect('test.db')
+# 创建一个Cursor(游标):
+>>> cursor = conn.cursor() 
+# 执行一条SQL语句，创建user表:
+>>> cursor.execute('create table user (id varchar(20) primary key, name varchar(20))')
+<sqlite3.Cursor object at 0x10f8aa260>
+# 继续执行一条SQL语句，插入一条记录:
+>>> cursor.execute('insert into user (id, name) values (\'1\', \'Coreene\')')
+<sqlite3.Cursor object at 0x10f8aa260>
+# 通过rowcount获得插入的行数:
+>>> cursor.rowcount
+1
+# 关闭Cursor:
+>>> cursor.close()
+# 提交事务:
+>>> conn.commit()
+# 关闭Connection:
+>>> conn.close()
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 

@@ -66,6 +66,7 @@ else:
 
 
 
+
 #常用内建模块
 
 #datetime
@@ -326,7 +327,13 @@ image = image.filter(ImageFilter.BLUR)
 image.save('code.jpg', 'jpeg')
 
 
+
+
+
 #virtualenv 为一个应用创建一套“隔离”的Python运行环境
+
+
+
 
 
 #图形界面
