@@ -1,6 +1,6 @@
 #python 学习笔记6之 Web开发 异步IO
 
-#HTTP请求：
+#HTTP协议简介：
 '''1.浏览器发给服务器请求：
 方法：GET仅请求资源，POST会附带用户数据；
 路径：/full/url/path；
@@ -146,29 +146,152 @@ Django：Django是一站式框架，内置一个用{% ... %}和{{ xxx }}的模�
 
 
 
+
+
+
+
+
+
 # 异步IO
 '''多线程和异步，是处理大并发的两种不同的方式。多线程的处理方式一般是这样：
 一个主线程，负责监听，一旦请求来了，就起一个线程，处理完，就将这个线程回收。
 而异步是在同一个线程里，轮番接受请求，再交给业务逻辑去处理，“多路复用”'''
 '''阻塞和非阻塞是等待方式的区别.阻塞是同步的，异步一定是非阻塞的'''
 
+
+
 #协程 Coroutine
+#Python对协程的支持是通过generator实现的
+'''Python中的协程三个阶段
+1.最初的生成器变形yield/send
+2.引入@asyncio.coroutine和yield from
+3.在最近的Python3.5版本中引入async/await关键字'''
+
+def consumer():  #是一个generator
+    r = ''
+    while True:
+        print('r---->%s' % r) #启动后执行到这里，遇见yield暂停
+        n = yield r  #接受到n后执行
+        if not n:
+            print('a')
+            return
+        print('[CONSUMER] Consuming %s...' % n)
+        r = '200 OK'
+def produce(c):
+    c.send(None) #等价于next(c),启动生成器
+    n = 0
+    while n < 2:
+        n = n + 1
+        print('[PRODUCER] Producing %s...' % n)
+        r = c.send(n) #将n发送给c,作为当前中断的yield表达式的返回值
+        print('[PRODUCER] Consumer return: %s' % r)
+    c.close()
+c = consumer()
+produce(c)
+#结果：
+r---->
+[PRODUCER] Producing 1...
+[CONSUMER] Consuming 1...
+r---->200 OK
+[PRODUCER] Consumer return: 200 OK
+[PRODUCER] Producing 2...
+[CONSUMER] Consuming ...
+r---->200 OK
+[PRODUCER] Consumer return: 200 OK
+
+'''yield表达式本身没有返回值，它的返回值需要等到下次调用generator函数时，
+由send(args)函数的参数赋予。
+n1 = yield r是两个操作:
+1是执行yield r，执行完后没有返回值，但是把r作为generator函数的执行结果返回。
+2是下次send(n)调用generator函数时首先给n1赋值。'''
+
+'''c.send(n)将n发送给c，作为c中当前中断的yield表达式的返回值'''
 
 
+#asyncio 库
+import asyncio
+@asyncio.coroutine
+def sleep3s():
+    print('begin sleep 3s')
+    yield from asyncio.sleep(3.0)
+    print('end sleep 3s')
+@asyncio.coroutine   
+def sleep5s():
+    print('begin sleep 5s')
+    yield from asyncio.sleep(5.0)
+    print('end sleep 5s')
+loop=asyncio.get_event_loop()
+tasks = [sleep3s(), sleep5s()] #多个coroutine封装成一组Task然后并发执行
+loop.run_until_complete(asyncio.wait(tasks))
+loop.close()
+#执行结果：
+begin sleep 3s
+begin sleep 5s
+(暂停3s)
+end sleep 3s
+(暂停2s)
+end sleep 5s
+
+'''yield from用于重构生成器,还可以像一个管道一样将send信息传递给内层协程，
+并且处理好了各种异常情况'''
+
+'''利用@asyncio.coroutine修饰以后，这个函数可以支持await或者 yield from语法,一旦
+执行yield from 语法以后，asyncio将会挂起当前的coroutine，去执行其他的coroutine'''
+
+'''asyncio 库：event loop
+asyncio库一个重要的概念就是事件循环,只有启动事件循环以后，才可以让coroutine任务
+得以继续执行，如果event loop停止或者暂停，那么整个异步io也停止或者暂停'''
+
+'''当开始运行event loop以后：
+1.开始执行sleep3s
+2.当程序开始进入睡眠以后，event loop不会停止当前线程，而是挂起当前函数，执行
+下一个coroutine,即sleep5s
+3.sleep5s开始进入睡眠，挂起当前的函数
+4.event loop检测到sleep 3s时间已经到了,于是重新执行被挂起的sleep3s,sleep3s执行完毕
+5.sleep5s时间已经到了,于是重新执行被挂起的sleep5s,sleep5s执行完毕'''
 
 
+#async/await
+'''只需要做两步简单的替换：
+1.把@asyncio.coroutine替换为async；2.把yield from替换为await'''
 
-
-
-
-
-
-
-
-
+@asyncio.coroutine
+def hello():
+    print("Hello world!")
+    r = yield from asyncio.sleep(1)
+    print("Hello again!")
+#重新编写：
+async def hello():
+    print("Hello world!")
+    r = await asyncio.sleep(1)
+    print("Hello again!")
  
 
+#aiohttp
+import asyncio
+from aiohttp import web
 
+async def index(request):
+    await asyncio.sleep(0.5) #模拟耗时操作
+    return web.Response(body=b'<h1>Index</h1>')
+
+async def hello(request):
+    await asyncio.sleep(0.5):
+    text='<h1>hello,%s</h>'%request.match_info['name']
+    return web.Response(body=text.encode('utf-8'))
+
+async def init(loop): #初始化函数init()也是一个coroutine
+    app=web.Application(loop=loop)
+    app.router.add_route('GET','/',index)
+    app.router.add_route('GET','/hello/{name}',hello)
+    srv=await loop.creat_server(app.make_handler(),'127.0.0.1',8000)
+    #loop.creat_server()利用asyncio创建TCP服务。
+    print('Server staarted at http://127.0.0.1:8000...')
+    return srv
+
+loop=asyncio.get_event_loop()
+loop.run_until_complete(init(loop))
+loop.run_forever()
 
 
 
