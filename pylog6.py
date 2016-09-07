@@ -1,5 +1,28 @@
 #python 学习笔记6之 Web开发 异步IO
 
+#概况介绍
+﻿'''TCP 三次握手连接 点对点 无大小限制 可靠
+UDP 无连接 可广播发送 有大小限制 不可靠
+
+socket “套接字”  由一个IP地址和一个端口号确定  
+应用层与TCP/IP协议通信的中间软件抽象层 是一组接口（门面模式）
+ClientSocket ServerSocket
+套接字连接过程：服务端监听——客户端请求——连接确认
+
+HTTP协议 建立在TCP协议之上 短连接
+HTTP使用“请求（方法，url，协议版本，相关mime样式）——响应
+ （消息的协议版本，一个成功和失败码，相关mime样式）”方式
+HTTP/1.0为每一次HTTP的请求/响应建立一条新的TCP链接，因此一个
+       包含HTML内容和图片的页面将需要建立多次的短期的TCP链接
+HTTP/1.1提出了可持续链接的实现方法
+
+
+结论：HTTP是应用层协议，其传输都是被包装成TCP协议传输。可以用SOCKET实现
+HTTP。SOCKET是实现传输层协议的一种编程API，可以是TCP，也可以是UDP。'''
+
+
+
+
 #HTTP协议简介：
 '''1.浏览器发给服务器请求：
 方法：GET仅请求资源，POST会附带用户数据；
@@ -53,9 +76,11 @@ body data goes here...
 
 
 
+
 #HTML
 #CSS是Cascading Style Sheets（层叠样式表）控制页面元素样式
 #JavaScript是为了让HTML具有交互性而作为脚本语言添加的
+
 
 
 
@@ -70,11 +95,14 @@ list表示的HTTP Header。每个Header用一个包含两个str的tuple表示。
 然后，函数的返回值b'<h1>Hello, web!</h1>'将作为HTTP响应的Body发送给浏览器'''
 
 
+
 #运行WSGI服务
 1.# hello.py  实现Web应用程序的WSGI处理函数：
 def application(environ, start_response):
-    start_response('200 OK', [('Content-Type', 'text/html')])
-    return [b'<h1>Hello, web!</h1>']
+    start_response('200 OK', [('Content-Type', 'text/html')])   #HTTP响应的Header
+    body = '<h1>Hello, %s!</h1>' % (environ['PATH_INFO'][1:] or 'web') 
+    #HTTP响应的Body
+    return [body.encode('utf-8')]  
 
 2.# server.py  启动WSGI服务器，加载application()函数：
 # 从wsgiref模块导入:
@@ -86,6 +114,11 @@ httpd = make_server('', 8000, application)
 print('Serving HTTP on port 8000...')
 # 开始监听HTTP请求:
 httpd.serve_forever()
+
+#hello.py没有import任何包，说明这个文件改起来测试起来容易。
+#serve包含的都是引入服务器的一些固定代码，调通一次就没必要改动了
+
+
 
 
 
@@ -109,12 +142,14 @@ def signin_form():
               </form>'''
 
 @app.route('/signin', methods=['POST'])
+
 def signin():
     # 需要从request对象读取表单内容：
     if request.form['username']=='admin' and request.form['password']=='password':
         return '<h3>Hello, admin!</h3>'
     return '<h3>Bad username or password.</h3>'
 
+#运行python app.py，Flask自带的Server在端口5000上监听:
 if __name__ == '__main__':
     app.run()
 
@@ -126,8 +161,10 @@ Tornado：Facebook的开源异步Web框架。'''
 
 
 
+
 #使用模板
 #MVC：Model-View-Controller，“模型-视图-控制器”
+#V就是VIEW层，负责展示HTML，C是控制层，负责调度url，M是model层
 
 
 #jinja2
