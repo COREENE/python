@@ -85,26 +85,50 @@ body data goes here...
 
 
 # WSGI接口
-def application(environ, start_response):
-    start_response('200 OK', [('Content-Type', 'text/html')])
-    return [b'<h1>Hello, web!</h1>']
-''''environ：一个包含所有HTTP请求信息的dict对象；
-start_response：发送HTTP响应的Header。只能调用一次,因为Header只能发送一次，
-start_response()函数接收两个参数，一个是HTTP响应码，一个是一组
-list表示的HTTP Header。每个Header用一个包含两个str的tuple表示。
-然后，函数的返回值b'<h1>Hello, web!</h1>'将作为HTTP响应的Body发送给浏览器'''
+'''WSGI：wsgi是python web开发的标准，类似于协议。它是服务器程序和应用程序的一个约定，
+规定了各自使用的接口和功能，以便二和互相配合 '''
 
+
+#WSGI部分规定：
+#1.WSGI应用程序的部分规定:应用程序是 calllable object，形如：
+def application(environ, start_response):
+     status = '200 OK'
+     response_headers = [('Content-type','text/plain')]
+     start_response(status, response_headers)
+     return [b'<h1>Hello, web!</h1>']
+#environ：一个包含所有HTTP请求信息的dict对象；
+#start_response：发送HTTP响应的Header。只能调用一次,因为Header只能发送一次，
+#start_response()函数接收两个参数，一个是HTTP响应码，一个是一组
+#list表示的HTTP Header。每个Header用一个包含两个str的tuple表示。
+#函数的返回值b'<h1>Hello, web!</h1>'将作为HTTP响应的Body发送给浏览器
+
+#2.WSGI服务器程序的部分规定: 服务器程序需要调用应用程序
+
+#middleware
+#middleware是介于服务器程序和应用程序中间的部分，middleware对服务器程序和应用程序是透明的
+# URL Routing middleware
+def urlrouting(url_app_mapping):   
+    # 函数midware_app就是middleware
+    def midware_app(environ, start_response):       #函数可调用，包含2个参数，返回可迭代的值
+          url = environ['PATH_INFO']       
+          app = url_app_mapping[url]       #获得对应url的应用程序
+          result = app(environ, start_response)       #调用应用程序
+          return result       
+    return midware_app
+'''写中间件（middleware）的逻辑：
+1. middleware需要伪装成应用程序—> WSGI应用程序的要求 —> 1. 可调用  2. 两个参数  3. 返回可迭代的值
+2. middleware需要伪装成服务器程序 —> WSGI服务器程序的要求 —> 调用应用程序'''
 
 
 #运行WSGI服务
-1.# hello.py  实现Web应用程序的WSGI处理函数：
+1.# hello.py: 实现Web应用程序的WSGI处理函数：
 def application(environ, start_response):
     start_response('200 OK', [('Content-Type', 'text/html')])   #HTTP响应的Header
     body = '<h1>Hello, %s!</h1>' % (environ['PATH_INFO'][1:] or 'web') 
     #HTTP响应的Body
     return [body.encode('utf-8')]  
 
-2.# server.py  启动WSGI服务器，加载application()函数：
+2.# server.py:启动WSGI服务器，加载application()函数
 # 从wsgiref模块导入:
 from wsgiref.simple_server import make_server
 # 导入我们自己编写的application函数:
@@ -113,7 +137,7 @@ from hello import application
 httpd = make_server('', 8000, application)
 print('Serving HTTP on port 8000...')
 # 开始监听HTTP请求:
-httpd.serve_forever()
+httpd.serve_forever()# Respond to requests until process is killed
 
 #hello.py没有import任何包，说明这个文件改起来测试起来容易。
 #serve包含的都是引入服务器的一些固定代码，调通一次就没必要改动了
@@ -318,7 +342,8 @@ async def hello(request):
     return web.Response(body=text.encode('utf-8'))
 
 async def init(loop): #初始化函数init()也是一个coroutine
-    app=web.Application(loop=loop)
+    app=web.Application(loop=loop) 
+    # loop=loop: name=value (loop parameter constructor is keyword-only )
     app.router.add_route('GET','/',index)
     app.router.add_route('GET','/hello/{name}',hello)
     srv=await loop.creat_server(app.make_handler(),'127.0.0.1',8000)
