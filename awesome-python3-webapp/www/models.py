@@ -11,11 +11,11 @@ import time, uuid
 
 from orm import Model, StringField, BooleanField, FloatField, TextField
 
+# 用当前时间与随机生成的uuid合成作为id
 def next_id():
-    #看别的小伙伴的解释说uuid4()是用来生成随机数的，我也是懒的求证了，这边会用就行了
-    #time.time()就是返回当前时间戳
-    #这个函数的作用就是生成一个和当前时间有关的独一无二的id，来做为数据库表中每一行的主键
+    # uuid4()以随机方式生成uuid,hex属性将uuid转为32位的16进制数
     return '%015d%s000' % (int(time.time() * 1000), uuid.uuid4().hex)
+    
 
 class User(Model):
     __table__ = 'users'				#定义表名
@@ -30,6 +30,7 @@ class User(Model):
 
 class Blog(Model):
     __table__ = 'blogs'
+
     id = StringField(primary_key=True, default=next_id, ddl='varchar(50)')
     user_id = StringField(ddl='varchar(50)')	#作者id
     user_name = StringField(ddl='varchar(50)')	#作者名
@@ -41,6 +42,7 @@ class Blog(Model):
 
 class Comment(Model):
     __table__ = 'comments'
+
     id = StringField(primary_key=True, default=next_id, ddl='varchar(50)')
     blog_id = StringField(ddl='varchar(50)')	#博客id
     user_id = StringField(ddl='varchar(50)')	#评论者id

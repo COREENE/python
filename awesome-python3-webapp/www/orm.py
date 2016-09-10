@@ -92,7 +92,7 @@ class Field(object):
     #为了在命令行按照'<%s, %s:%s>'这个格式输出字段的相关信息
 
     def __str__(self):
-        return '<%s, %s:%s>' % (self.__class__.__name__, self.column_type,self.column_type, self.name)
+        return '<%s, %s:%s>' % (self.__class__.__name__, self.column_type,self.name)
 
 # 字符串域。映射varchar
 class StringField(Field):
