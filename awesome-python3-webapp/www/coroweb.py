@@ -5,7 +5,9 @@ __author__ = 'Coreene Wong'
 
 import asyncio, os, logging
 import functools # 高阶函数模块, 提供常用的高阶函数, 如wraps
-import inspect #the module provides several useful functions to help get informationabout live objects
+# python中的自省模块，类似完成Java一样的反射功能。具有类型判断、获取元信息等功能，具体建议查看下方提供的官方文档
+# https://docs.python.org/3/library/inspect.html
+import inspect 
 
 from urllib import parse # 从urllib导入解析模块
 
@@ -21,9 +23,6 @@ def get(path):
 	Define decorator @get('/path)
 	'''
 	def decorator(func):
-        # 该装饰器的作用是解决一些函数签名的问题
-        # 比如若没有该装饰器,wrapper.__name__将为"wrapper"
-        # 加了装饰器,wrapper.__name__就等于func.__name__
 		@functools.wraps(func)
 		def wrapper(*args, **kw):
 			return func(*args, **kw)
@@ -34,7 +33,6 @@ def get(path):
 		return wrapper
 	return decorator
 
-# 与@get类似
 def post(path):
 	'''
     Define decorator @post('/path')
@@ -48,51 +46,52 @@ def post(path):
 		return wrapper
 	return decorator
 
-# 获取函数的值为空的命名关键字
+# ---------------------------- 使用inspect模块中的signature方法来获取函数的参数，实现一些复用功能--
+# 关于inspect.Parameter 的 kind 类型有5种：
+# POSITIONAL_ONLY        只能是位置参数
+# POSITIONAL_OR_KEYWORD  可以是位置参数也可以是关键字参数
+# VAR_POSITIONAL         相当于是 *args
+# KEYWORD_ONLY           命名关键字参数，相当于是 *,key
+# VAR_KEYWORD            相当于是 **kw
+
+# def foo(a, *, b:int, **kwargs)...; signature(foo)==(a, *, b:int, **kwargs)
+# signature(foo).parameters==OrderedDict([('a', <Parameter "a">), ('b', <Parameter "b:int">), ('kwargs', <Parameter "**kwargs">)])
+
 def get_required_kw_args(fn):
+    # 如果url处理函数需要传入关键字参数，且默认是空得话，获取这个key
     args = []
-    # 获得函数fn的全部参数
-    # inspect.signature: return a signature object for the given callable(fn or cls..)
-    # a signature(签名,特征值) object represents the call signature of a function and it return annotation(注释).
-    # 即一个signature对象表示一个函数或方法的调用签名,我们说两个函数的函数名,参数完全一样的,他们就是一个函数,大概call signature(调用签名)就是指这些吧
-    # signature.parameters属性,返回一个参数名的有序映射
     params = inspect.signature(fn).parameters
     for name, param, in params.items():
-        # 获取是命名关键字,且未指定默认值的参数名
+        # param.default == inspect.Parameter.empty这一句表示参数的默认值要为空
         if param.kind == inspect.Parameter.KEYWORD_ONLY and param.default == inspect.Parameter.empty:
             args.append(name)
     return tuple(args)
 
-# 获取命名关键字参数名
-def get_named_kw_args(fn):
+def get_all_kw_args(fn):
+    # 如果url处理函数需要传入关键字参数，获取这个key
     args = []
-    # 获得函数fn的全部参数
     params = inspect.signature(fn).parameters
     for name, param, in params.items():
-        # KEYWORD_ONLY, 表示命名关键字参数.
-        # 因此下面的操作就是获得命名关键字参数名
         if param.kind == inspect.Parameter.KEYWORD_ONLY:
             args.append(name)
     return tuple(args)
 
-
-# 判断函数fn是否带有命名关键字参数
-def has_named_kw_args(fn):
+def has_kw_args(fn):
+    # 判断是否有关键字参数
     params = inspect.signature(fn).parameters
     for name, param in params.items():
         if param.kind == inspect.Parameter.KEYWORD_ONLY:
             return True
 
-# 判断函数fn是否带有关键字参数
 def has_var_kw_arg(fn):
+    # 判断是否有关键字变长参数，VAR_KEYWORD对应**kw
     params = inspect.signature(fn).parameters
     for name, param in params.items():
-        # VAR_KEYWORD, 表示关键字参数, 匹配**kw
         if param.kind == inspect.Parameter.VAR_KEYWORD:
             return True
 
-# 函数fn是否有请求关键字
 def has_request_arg(fn):
+    # 函数fn是否有'request'参数,并且该参数要在其他普通的位置参数之后
     sig = inspect.signature(fn)
     params = sig.parameters
     found = False
@@ -100,107 +99,126 @@ def has_request_arg(fn):
         if name == "request": # 找到名为"request"的参数,置found为真
             found = True
             continue
-        # VAR_POSITIONAL,表示可选参数,匹配*args
-        # 若已经找到"request"关键字,但其不是函数的最后一个参数,将报错
-        # request参数必须是最后一个命名参数
+        # 该参数要在其他普通的位置参数之后。如果判断为True，则表明param只能是位置参数POSITIONAL_ONLY
         if found and (param.kind != inspect.Parameter.VAR_POSITIONAL and param.kind != inspect.Parameter.KEYWORD_ONLY and param.kind != inspect.Parameter.VAR_KEYWORD):
             raise ValueError("request parameter must be the last named parameter in function: %s%s" % (fn.__name__, str(sig)))
     return found
 
 # 定义RequestHandler类,封装url处理函数
-# RequestHandler的目的是从url函数中分析需要提取的参数,从request中获取必要的参数
+# RequestHandler目的就是从URL处理函数（如handlers.index）中分析其需要接收的参数，从web.request对象中获取必要的参数
 # URL函数不一定是一个coroutine，因此我们用RequestHandler()来封装一个URL处理函数。
 # 调用url参数,然后把结果转换为web.Response对象，这样，就完全符合aiohttp框架的要求：
 class RequestHandler(object):
-
+# RequestHandler是一个类，由于定义了__call__()方法，因此可以将其实例视为函数。
     def __init__(self, app, fn):
-        self._app = app # web application
-        self._func = fn # handler
-
-        # 以下即为上面定义的一些判断函数与获取函数
+        self._app = app
+        self._func = fn 
         self._has_request_arg = has_request_arg(fn)
         self._has_var_kw_arg = has_var_kw_arg(fn)
-        self._has_named_kw_args = has_named_kw_args(fn)
-        self._named_kw_args = get_named_kw_args(fn)
+        self._has_kw_args = has_kw_args(fn)
+        self._all_kw_args = get_all_kw_args(fn)
         self._required_kw_args = get_required_kw_args(fn)
 
-
-    # 定义了__call__,则其实例可以被视为函数
-    # 此处参数为request
     @asyncio.coroutine
-    def __call__(self, request):
-
-        kw = None # 设不存在关键字参数
-
-        # 存在关键字参数/命名关键字参数
-        if self._has_var_kw_arg or self._has_named_kw_args or self._required_kw_args:
-
+    def __get_request_content(self, request):
+        request_content = None 
+        # 确保有参数
+        if self._has_var_kw_arg or self._has_kw_args or self._required_kw_args:
+            
+            # ------阶段1：POST/GET方法下正确解析request的参数，包括位置参数和关键字参数------
+            #
             # http method 为 post的处理
             if request.method == "POST":
-                # http method 为post, 但request的content type为空, 返回丢失信息
+                # 判断是否村存在Content-Type（媒体格式类型）:text/html; charset:utf-8; ...;
                 if not request.content_type:
                     return web.HTTPBadRequest("Missing Content-Type")
-                ct = request.content_type.lower() # 获得content type字段
+                ct = request.content_type.lower() 
                 # 以下为检查post请求的content type字段
                 # application/json表示消息主体是序列化后的json字符串
                 if ct.startswith("application/json"):
                     params = yield from request.json() # request.json方法的作用是读取request body, 并以json格式解码
                     if not isinstance(params, dict): # 解码得到的参数不是字典类型, 返回提示信息
                         return web.HTTPBadRequest("JSON body must be object.")
-                    kw = params # post, content type字段指定的消息主体是json字符串,且解码得到参数为字典类型的,将其赋给变量kw
+                    request_content = params 
                 # 以下2种content type都表示消息主体是表单
                 elif ct.startswith("application/x-www-form-urlencoded") or ct.startswith("multipart/form-data"): 
-                    # request.post方法从request body读取POST参数,即表单信息,并包装成字典赋给kw变量
-                    params = yield from request.post()
-                    kw = dict(**params)
+                    # request.post方法从request body读取POST参数,即表单信息,并包装成字典赋给request_content变量
+                    params = yield from request.post()  # 调用post方法，注意此处已经使用了装饰器
+                    request_content = dict(**params)
                 else:
-                    # 此处我们只处理以上三种post 提交数据方式
                     return web.HTTPBadRequest("Unsupported Content-Type: %s" % request.content_type)
 
             # http method 为 get的处理
             if request.method == "GET":
-                # request.query_string表示url中的查询字符串
-                # 比如"https://www.google.com/#newwindow=1&q=google",其中q=google就是query_string
-                qs = request.query_string 
+                # request.query_string表示url中?后面的键值对内容
+                # 比如"https://www.google.com/#newwindow=1?q=google",其中q=google就是query_string
+                qs = request.query_string  
                 if qs:
-                    kw = dict() # 原来为None的kw变成字典
-                    for k, v in parse.parse_qs(qs, True).items(): # 解析query_string,以字典的形如储存到kw变量中
-                        kw[k] = v[0]
-        if kw is None: # 经过以上处理, kw仍未空,即以上全部不匹配,则获取请求的abstract math info(抽象数学信息),好吧,我也不知道这是什么鬼东西,并以字典形式存入kw
-            kw = dict(**request.match_info)
+                    request_content = dict() 
+                    # 解析query_string,以字典的形式保存到request_content
+                    for k, v in parse.parse_qs(qs, True).items():
+                        request_content[k] = v[0]
+        return request_content
+
+    # __call__方法的代码逻辑:
+    # 1.定义kw=request_content对象，用于保存参数
+    # 2.判断URL处理函数是否存在参数，如果存在则根据是POST还是GET方法将request请求内容保存到kw
+    # 3.如果kw为空(说明request没有请求内容)，则将match_info列表里面的资源映射表赋值给kw；如果不为空则把命名关键字参数的内容给kw
+    # 4.完善_has_request_arg和_required_kw_args属性
+    @asyncio.coroutine
+    def __call__(self, request):
+        request_content = yield from self.__get_request_content(request)
+        # pdb.set_trace()
+        if request_content is None:  # 参数为空说明没有从Request对象中获取到必要参数
+            '''
+            def hello(request):
+                    text = '<h1>hello, %s!</h1>' % request.match_info['name']
+                    return web.Response() 
+            app.router.add_route('GET', '/hello/{name}', hello)
+            '''
+            '''if not self._has_var_kw_arg and not self._has_kw_arg and not self._required_kw_args:
+                # 当URL处理函数没有参数时，将request.match_info设为空，防止调用出错
+                request_content = dict()
+            '''        
+            request_content = dict(**request.match_info) # request.match_info是一个dict
+            # 此时request_content指向match_info属性，一个变量标识符的名字的dict列表。Request中获取的命名关键字参数必须要在这个dict当中
+            # request_content 不为空,且requesthandler只存在命名关键字的,则只取命名关键字参数名放入request_content
         else:
-            # kw 不为空,且requesthandler只存在命名关键字的,则只取命名关键字参数名放入kw
-            if not self._has_var_kw_arg and self._named_kw_args:
+            # 如果从Request对象中获取到参数了
+            # 当没有可变参数，有命名关键字参数时候，request_content指向命名关键字参数的内容
+            if not self._has_var_kw_arg and self._all_kw_args: # not的优先级比and的优先级要高
+                # remove all unamed request_content, 从request_content中删除URL处理函数中所有不需要的参数
                 copy = dict()
-                for name in self._named_kw_args:
-                    if name in kw:
-                        copy[name] = kw[name]
-                kw = copy
-            # 遍历request.match_info(abstract math info), 若其key又存在于kw中,发出重复参数警告
+                for name in self._all_kw_args:
+                    if name in request_content:
+                        copy[name] = request_content[name]
+                request_content = copy
+            # check named arg: 检查关键字参数的名字是否和match_info中的重复
             for k, v in request.match_info.items():
-                if k in kw:
-                    logging.warning("Duplicate arg name in named arg and kw args: %s" % k)
-                # 用math_info的值覆盖kw中的原值
-                kw[k] = v
-        # 若存在"request"关键字, 则添加
-        if self._has_request_arg:
-            kw["request"] = request
-        # 若存在未指定值的命名关键字参数,且参数名未在kw中,返回丢失参数信息
+                if k in request_content:
+                    logging.warning("Duplicate arg name in named arg and request_content args: %s" % k)                
+                request_content[k] = v  # 用math_info的值覆盖request_content中的原值
+
+        if self._has_request_arg: #且参数名未在request_content中,返回丢失参数信息
+        # 如果有request这个参数，则把request对象加入request_content['request']    
+            request_content["request"] = request
+        
         if self._required_kw_args:
+        # check required request_content,检查是否有必需关键字参数   
             for name in self._required_kw_args:
-                if not name in kw:
+                if not name in request_content:
                     return web.HTTPBadRequest("Missing argument: %s" % name)
-        logging.info("call with args: %s" % str(kw))
-        # 以上过程即为从request中获得必要的参数
+        # 以上代码均是为了获取调用参数
+        logging.info("call with args: %s" % str(request_content))
         
         # 以下调用handler处理,并返回response.
         try:
-            r = yield from self._func(**kw)
+            r = yield from self._func(**request_content) 
             return r
         except APIError as e:
             return dict(error = e.error, data = e.data, message = e.message)
 
-# 添加静态文件夹的路径    
+# 添加CSS等静态文件所在路径
 def add_static(app):
     # os.path.abspath(__file__), 返回当前脚本的绝对路径(包括文件名)
     # os.path.dirname(), 去掉文件名,返回目录路径
@@ -210,11 +228,10 @@ def add_static(app):
     app.router.add_static("/static/", path)
     logging.info("add static %s => %s" % ("/static/", path))
 
-# 将处理函数注册到app上 (添加路由)
-# 处理将针对http method 和path进行
+# URL处理函数, 将处理函数注册到app上 (添加路由)
 def add_route(app, fn):
     method = getattr(fn, "__method__", None) # 获取fn.__method__属性,若不存在将返回None
-    path = getattr(fn, "__route__", None) # 同上
+    path = getattr(fn, "__route__", None) 
     # 由于我们定义的处理方法，被@get或@post修饰过，所以方法里会有'__method__'和'__route__'属性
     # http method 或 path 路径未知,将无法进行处理,因此报错 
     if path is None or method is None:
@@ -223,40 +240,38 @@ def add_route(app, fn):
     if not asyncio.iscoroutinefunction(fn) and not inspect.isgeneratorfunction(fn):
         fn = asyncio.coroutine(fn)
     logging.info("add route %s %s => %s(%s)" % (method, path, fn.__name__, '. '.join(inspect.signature(fn).parameters.keys())))
+    # eg-INFO:root:add route GET / => index(request)
     # 注册request handler
     app.router.add_route(method, path, RequestHandler(app, fn))
 
 # 自动注册所有请求处理函数（添加一个模块的所有路由）
 def add_routes(app, module_name):
-    n = module_name.rfind(".") # n 记录模块名中最后一个.的位置
-    if n == (-1): # -1 表示未找到,即module_name表示的模块直接导入
-        # __import__()的作用同import语句,python官网说强烈不建议这么做
-        # __import__(name, globals=None, locals=None, fromlist=(), level=0)
-        # name -- 模块名
-        # globals, locals -- determine how to interpret the name in package context
-        # fromlist -- name表示的模块的子模块或对象名列表
-        # level -- 绝对导入还是相对导入,默认值为0, 即使用绝对导入,正数值表示相对导入时,导入目录的父目录的层数
+    # module_name格式 'hhh.handlers'/'handlers'
+    # Python rfind() 返回字符串最后一次出现的位置，如果没有匹配项则返回-1
+    n = module_name.rfind(".") 
+    if n == (-1): # module_name = handlers
+        # __import__ 作用同import语句，但__import__是一个函数，并且只接收字符串作为参数, 
+        # 其实import语句就是调用这个函数进行导入工作的, 其返回值是对应导入模块的引用
+        # __import__('os',globals(),locals(),['path','pip']) ,等价于from os import path, pip'''
         mod = __import__(module_name, globals(), locals())
-    else:
-        name = module_name[n+1:] # 
-        # 以下语句表示, 先用__import__表达式导入模块以及子模块
-        # 再通过getattr()方法取得子模块名, 如datetime.datetime
-        mod = getattr(__import__(module_name[:n], globals(), locals(), [name]), name)
+    else: #eg: module_name = hhh.handlers
+        name = module_name[n+1:] # name = handlers
+        # 先用__import__表达式导入模块以及子模块 from hhh import handlers
+        # 再通过getattr()方法获得 handlers
+        mod = getattr(__import__(module_name[:n], globals(), locals(), [name]), name) # getattr(x, 'y') is equivalent to x.y
     # 遍历模块目录
     for attr in dir(mod):
-        # 忽略以_开头的属性与方法,_xx或__xx(前导1/2个下划线)指示方法或属性为私有的,__xx__指示为特殊变量
-        # 私有的,能引用(python并不存在真正私有),但不应引用;特殊的,可以直接应用,但一般有特殊用途
-        if attr.startswith("_"):
+        # dir(mod)返回模块定义的名称列表（函数、类和变量）,这里主要是找处理方法
+        # 由于我们定义的处理方法，被@get或@post修饰过，所以方法里会有'__method__'和'__route__'属性
+        if attr.startswith("_"): # 忽略以_开头的属性与方法(是私有/特殊)
             continue
-        fn = getattr(mod, attr) # 获得模块的属性或方法, 如datetime.datetime.now # 前一个datetime表示模块名,后一个表示子模块名,如果是以上述else方法导入的模块,就应为datetime.datetime形式
-        if callable(fn):
-            # 获取fn的__method__属性与__route__属性获得http method与path信息
-            # 此脚本开头的@get与@post装饰器就为fn加上了__method__与__route__
+        fn = getattr(mod, attr) # 排除私有属性后，就把属性提取出来
+        if callable(fn): # 取能调用的，说明是方法 
             method = getattr(fn, "__method__", None)
             path = getattr(fn, "__route__",None)
-            # 注册request handler, 与add.router.add_route(method, path, handler)一样的
-            if method and path:
-                add_route(app, fn)
+            if method and path: 
+                # 如果都有，说明是我们定义的处理方法 eg:fn = index(request),交给add_route去处理
+                add_route(app, fn) 
 
 
 

@@ -27,7 +27,6 @@ async def create_pool(loop, **kw):
         db=kw['db'],# 数据库名
         charset=kw.get('charset', 'utf8'),# 设置连接使用的编码格式utf-8
         autocommit=kw.get('autocommit', True),# 是否自动提交，默认false
-        # 以下是可选项设置:
         maxsize=kw.get('maxsize', 10),# 最大连接池大小，默认10
         minsize=kw.get('minsize', 1), # 最小连接池大小，默认1
         loop=loop # 设置消息循环

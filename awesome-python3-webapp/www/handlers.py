@@ -19,6 +19,7 @@ from models import User, Comment, Blog, next_id
 async def index(request):
     users = await User.findAll()
     return {
-        '__template__': 'test.html', #'__template__'指定的模板文件是test.html
+        '__template__': 'test.html', 
         'users': users
+        #'__template__'指定的模板文件是test.html，其他参数是传递给模板的数据
     }
