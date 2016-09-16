@@ -7,15 +7,16 @@ Configuration
 
 __author__ = 'Coreene Wong'
 
-import config_default#导入默认配置
+import config_default #导入默认配置
 
-class Dict(dict):#这个类应该算是很常见了，就是把dict类加工一下，使得新的Dict类创建的实例可以用x.y的方式来取值和赋值
+# 这个类主要可以使dict对象，以object.key 形式来替代  object[key]来取值
+class Dict(dict): 
     '''
     Simple dict but support access as x.y style.
     '''
-    def __init__(self, names=(), values=(), **kw):#看不懂这个初始化方法
-        super(Dict, self).__init__(**kw)#先调用父类的初始化方法存储键值对
-        for k, v in zip(names, values):#然后自己再用for循环遍历存储键值对，why?
+    def __init__(self, names=(), values=(), **kw):
+        super(Dict, self).__init__(**kw) 
+        for k, v in zip(names, values): 
             self[k] = v
 
     def __getattr__(self, key):
@@ -27,7 +28,7 @@ class Dict(dict):#这个类应该算是很常见了，就是把dict类加工一�
     def __setattr__(self, key, value):
         self[key] = value
 
-def merge(defaults, override):#融合默认配置和自定义配置
+def merge(defaults, override): # 融合默认配置和自定义配置
     r = {}
     for k, v in defaults.items():
         if k in override:
@@ -39,18 +40,21 @@ def merge(defaults, override):#融合默认配置和自定义配置
             r[k] = v
     return r
 
-def toDict(d):#把d这个dict的键值对存入我们自定义的Dict中，然后返回一个新的Dict也就是D
+# 把配置文件转换为Dict类实例
+def toDict(d):
     D = Dict()
-    for k, v in d.items():#用for循环遍历d的键值对，然后把这些键值对存入新的Dict
-        D[k] = toDict(v) if isinstance(v, dict) else v#假如值本身就是一个dict，那就把这个值交给toDict处理，然后再存入Dict
-    return D#返回生成的新Dict
-
+    #假如值本身就是一个dict，那就把这个值交给toDict处理，然后再存入Dict
+    for k, v in d.items():
+        D[k] = toDict(v) if isinstance(v, dict) else v
+    return D
 configs = config_default.configs
 
 try:
-    import config_override#导入自定义配置
-    configs = merge(configs, config_override.configs)#融合默认配置和自定义配置
-except ImportError:#导入自定义配置失败就直接pass
+    import config_override
+    # 这里把自定义配置文件里的配置项覆盖了默认配置里的配置项，
+    # 如果自定义配置里没有定义，默认配置定义了，则还是沿用默认配置
+    configs = merge(configs, config_override.configs)
+except ImportError:
     pass
 
-configs = toDict(configs)#将融合后的配置交给toDict函数处理
+configs = toDict(configs)

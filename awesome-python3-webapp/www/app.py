@@ -17,56 +17,88 @@ from aiohttp import web
 
 from jinja2 import Environment, FileSystemLoader ## 从jinja2模板库导入环境与文件系统加载器
 
+from config import configs
+
 import orm
 from coroweb import add_routes, add_static
+
+from handlers import cookie2user, COOKIE_NAME
 
 # 选择jinja2作为模板, 初始化模板; janja2相当于MVC的V
 def init_jinja2(app, **kw):
     logging.info("init jinja2...")
-    # 设置jinja2的Environment参数
+    # 初始化模板配置，包括模板运行代码的开始结束标识符，变量的开始结束标识符等
     options = dict(
+        # 是否转义设置为True，就是在渲染模板时自动把变量中的<>&等字符转换为&lt;&gt;&amp;        
         autoescape = kw.get("autoescape", True),     # 自动转义xml/html的特殊字符
         block_start_string = kw.get("block_start_string", "{%"), # 代码块开始标志
         block_end_string = kw.get("block_end_string", "%}"),     # 代码块结束标志
         variable_start_string = kw.get("variable_start_string", "{{"), # 变量开始标志
         variable_end_string = kw.get("variable_end_string", "}}"),     # 变量结束标志
+        # Jinja2会在使用Template时检查模板文件的状态，如果模板有修改， 则重新加载模板。如果对性能要求较高，可以将此值设为False
         auto_reload = kw.get("auto_reload", True) # 每当对模板发起请求,加载器首先检查模板是否发生改变.若是,则重载模板
         )
-    path = kw.get("path", None)  # 若关键字参数指定了path,将其赋给path变量, 否则path置为None
+    # 从参数中获取path字段，即模板文件的位置
+    path = kw.get("path", None) 
     if path is None:
-        # 若路径不存在,则将当前目录下的templates(www/templates/)设为jinja2的目录
+        # 若路径不存在,则默认为当前文件目录下的 templates 目录
         # os.path.abspath(__file__), 返回当前脚本的绝对路径(包括文件名)
         # os.path.dirname(), 去掉文件名,返回目录路径
         # os.path.join(), 将分离的各部分组合成一个路径名
         path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "templates")
     logging.info("set jinja2 template path: %s" % path)
-    # 初始化jinja2环境, options参数,之前已经进行过设置
+    # Environment是Jinja2中的一个核心类，它的实例用来保存配置、全局对象，以及从本地文件系统或其它位置加载模板。
+    # 这里把要加载的模板和配置传给Environment，生成Environment实例
     # 加载器负责从指定位置加载模板, 此处选择FileSystemLoader,顾名思义就是从文件系统加载模板,前面我们已经设置了path
     env = Environment(loader = FileSystemLoader(path), **options)
-    # 设置过滤器
-    # 先通过filters关键字参数获取过滤字典
-    # 再通过建立env.filters的键值对建立过滤器
+    # 从参数取filter字段
+    # filters: 一个字典描述的filters过滤器集合, 如果非模板被加载的时候, 可以安全的添加filters或移除较早的.
     filters = kw.get("filters", None)
+    # 如果有传入的过滤器设置，则设置为env的过滤器集合
     if filters is not None:
         for name, f in filters.items():
             env.filters[name] = f
-    # 将jinja环境赋给app的__templating__属性
+    # 给webapp设置模板
     app["__templating__"] = env
 
+
+# ------------------------------------------拦截器middlewares设置-------------------------
 # 创建应用时,通过指定命名关键字为一些"middle factory"的列表可创建中间件Middleware
 # 每个middle factory接收2个参数,一个app实例,一个handler, 并返回一个新的handler
 # 以下是一些middleware(中间件), 可以在url处理函数处理前后对url进行处理
 
 # 在处理请求之前,先记录日志
 @asyncio.coroutine
-def logger_factory(app, handler):
+def logger_factory(app, handler): #这就是个装饰器
     @asyncio.coroutine
     def logger(request):
-        # 记录日志,包括http method, 和path
+        # 记录日志,包括http method, 和path.    eg: INFO:root:Request: GET /
         logging.info("Request: %s %s" % (request.method, request.path))
         # 日志记录完毕之后, 调用传入的handler继续处理请求
         return (yield from handler(request))
     return logger
+
+# 是为了验证当前的这个请求用户是否在登录状态下，或是否是伪造的sha1
+@asyncio.coroutine
+def auth_factory(app, handler):
+    @asyncio.coroutine
+    def auth(request):
+        logging.info('check user: %s %s' % (request.method, request.path))
+        request.__user__ = None
+        # 获取到cookie字符串
+        cookie_str = request.cookies.get(COOKIE_NAME)
+        if cookie_str:
+            # 通过反向解析字符串和与数据库对比获取出user
+            user = yield from cookie2user(cookie_str)
+            if user:
+                logging.info('set current user: %s' % user.email)
+                # user存在则绑定到request上，说明当前用户是合法的
+                request.__user__ = user
+        if request.path.startswith('/manage/') and (request.__user__ is None or not request.__user__.admin):
+            return web.HTTPFound('/signin')
+        # 执行下一步
+        return (yield from handler(request))
+    return auth
 
 # 解析数据
 @asyncio.coroutine
@@ -97,41 +129,43 @@ def response_factory(app, handler):
     @asyncio.coroutine
     def response(request):
         logging.info("Response handler...")
-        # 调用handler来处理url请求,并返回响应结果
+        # 调用相应的handler处理request
         r = yield from handler(request)
-        # 若响应结果为StreamResponse,直接返回
-        # StreamResponse是aiohttp定义response的基类,即所有响应类型都继承自该类
-        # StreamResponse主要为流式数据而设计
+        # 如果响应结果为web.StreamResponse类，则直接把它作为响应返回
         if isinstance(r, web.StreamResponse):
             return r
-        # 若响应结果为字节流,则将其作为应答的body部分,并设置响应类型为流型
+        # 如果响应结果为字节流，则把字节流塞到response的body里，设置响应类型为流类型，返回
         if isinstance(r, bytes):
             resp = web.Response(body=r)
             resp.content_type = "application/octet-stream"
             return resp
         # 若响应结果为字符串
         if isinstance(r, str):
-            # 判断响应结果是否为重定向.若是,则返回重定向的地址
+            # 先判断是不是需要重定向，是的话直接用重定向的地址重定向
             if r.startswith("redirect:"):
                 return web.HTTPFound(r[9:])
-            # 响应结果不是重定向,则以utf-8对字符串进行编码,作为body.设置相应的响应类型
+            # 不是重定向的话，把字符串当做是html代码来处理
             resp = web.Response(body = r.encode("utf-8"))
             resp.content_type = "text/html;charset=utf-8"
             return resp
-        # 若响应结果为字典,则获取它的模板属性,此处为jinja2.env(见init_jinja2)
+        # 如果响应结果为字典
         if isinstance(r, dict):
+            # 如果响应结果为字典
             template = r.get("__template__") 
-            # 若不存在对应模板,则将字典调整为json格式返回,并设置响应类型为json 
+            # 如果没有，说明要返回json字符串，则把字典转换为json返回，对应的response类型设为json类型
             if template is None:
                 resp = web.Response(body=json.dumps(r, ensure_ascii=False, default=lambda o: o.__dict__).encode("utf-8"))
                 resp.content_type = "application/json;charset=utf-8"
                 return resp
-            # 存在对应模板的,则将套用模板,用request handler的结果进行渲染
             else:
+                # user在进入index()函数前就通过middleware绑定到request对象了
+                r['__user__'] = request.__user__
+                # 如果有'__template__'为key的值，则说明要套用jinja2的模板，'__template__'Key对应的为模板网页所在位置
                 resp = web.Response(body=app["__templating__"].get_template(template).render(**r).encode("utf-8"))
                 resp.content_type = "text/html;charset=utf-8"
+                # 以html的形式返回
                 return resp
-        # 若响应结果为整型的
+        # # 如果响应结果为int
         # 此时r为状态码,即404,500等
         if isinstance(r, int) and r >=100 and r<600:
             return web.Response
@@ -139,15 +173,25 @@ def response_factory(app, handler):
         if isinstance(r, tuple) and len(r) == 2:
             t, m = r
             # t为http状态码,m为错误描述
-            # 判断t是否满足100~600的条件
             if isinstance(t, int) and t>= 100 and t < 600:
                 # 返回状态码与错误描述
                 return web.Response(t, str(m))
-        # 默认以字符串形式返回响应结果,设置类型为普通文本
+        # default: 默认直接以字符串输出
         resp = web.Response(body=str(r).encode("utf-8"))
         resp.content_type = "text/plain;charset=utf-8"
         return resp
     return response
+
+# 响应处理
+# 总结下来一个请求在服务端收到后的方法调用顺序是:
+#       logger_factory->response_factory->RequestHandler().__call__->get或post->handler
+# 那么结果处理的情况就是:
+#       由handler构造出要返回的具体对象
+#       然后在这个返回的对象上加上'__method__'和'__route__'属性，以标识别这个对象并使接下来的程序容易处理
+#       RequestHandler目的就是从URL函数中分析其需要接收的参数，从request中获取必要的参数，调用URL函数,然后把结果返回给response_factory
+#       response_factory在拿到经过处理后的对象，经过一系列对象类型和格式的判断，构造出正确web.Response对象，以正确的方式返回给客户端
+# 在这个过程中，我们只用关心我们的handler的处理就好了，其他的都走统一的通道，如果需要差异化处理，就在通道中选择适合的地方添加处理代码。
+
 
 # 时间过滤器
 def datetime_filter(t):
@@ -168,21 +212,37 @@ def datetime_filter(t):
 #初始化协程
 @asyncio.coroutine
 def init(loop):
-    # 创建全局数据库连接池
-    yield from orm.create_pool(loop = loop, host = '127.0.0.1', port = 3306, user = 'www', password = "www", db = "awesome")
-    # 创建web应用
-    app = web.Application(loop=loop) #创建一个循环类型是消息循环的web应用对象
+    # 创建连接池, db参数传配置文件里的配置db
+    yield from orm.create_pool(loop = loop, **configs.db)
+    # 创建web应用  循环类型是消息循环
+    app = web.Application(loop=loop, middlewares=[logger_factory, auth_factory, response_factory]) 
+    # middlewares(中间件)设置3个中间处理函数(都是装饰器)
+    # middlewares中的每个factory接受两个参数，app 和 handler(即middlewares中的下一个handler)
+    # 譬如这里logger_factory的handler参数其实就是auth_factory
+    # middlewares的最后一个元素的handler会通过routes查找到相应的，其实就是routes注册的对应handler
+    # 这其实是装饰模式的典型体现，logger_factory, auth_factory, response_factory都是URL处理函数前（如handler.index）的装饰功能
     # 设置模板为jiaja2，并以时间为过滤器
     init_jinja2(app, filters = dict(datetime = datetime_filter))
-    # a注册所有url处理函数
-    add_routes(app, 'handlers')
-    # 将当前目录下的static目录将如app目录
+    # 添加请求的handlers，即各请求相对应的处理函数
+    add_routes(app, 'handlers') 
+    # 添加静态文件所在地址
     add_static(app)
     # 调用子协程：创建一个TCP服务器，绑定到"127.0.0.1:9000"socket,并返回一个服务器对象
     srv = yield from  loop.create_server(app.make_handler(), '127.0.0.1', 9000)
+    '''app.make_hander()中对middleware的处理: (装饰器原理)
+    for factory in reversed(self._middlewares):
+        handler = yield from factory(app, handler)
+    resp = yield from handler(request)
+
+    middleware的代码示意：m1( m2( m3( doFoo())))
+    middleware调用流程：
+        req -> m1 -> m2 -> m3 -> doFoo()- 一路return 原路返回
+        <- m1 <- m2 <- m2 <- resq - <-'''
     logging.info('server started at http://127.0.0.1:9000...')
     return srv
 
-loop = asyncio.get_event_loop()     # loop是一个消息循环
-loop.run_until_complete(init(loop)) # 在消息循环中执行协程
-loop.run_forever()
+# 入口，固定写法
+# 获取eventloop然后加入运行事件
+loop = asyncio.get_event_loop()    
+loop.run_until_complete(init(loop)) 
+loop.run_forever() 

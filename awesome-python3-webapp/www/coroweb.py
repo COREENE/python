@@ -104,9 +104,9 @@ def has_request_arg(fn):
             raise ValueError("request parameter must be the last named parameter in function: %s%s" % (fn.__name__, str(sig)))
     return found
 
-# 定义RequestHandler类,封装url处理函数
-# RequestHandler目的就是从URL处理函数（如handlers.index）中分析其需要接收的参数，从web.request对象中获取必要的参数
-# URL函数不一定是一个coroutine，因此我们用RequestHandler()来封装一个URL处理函数。
+# 定义RequestHandler类,封装url处理函数。
+# 是适配器，它把用户自定义参数的各种奇形怪状handler适配成了标准的 handler(request)调用
+# RequestHandler目的是从URL处理函数（如handlers.index）中分析其需要接收的参数，从web.request对象中获取必要的参数
 # 调用url参数,然后把结果转换为web.Response对象，这样，就完全符合aiohttp框架的要求：
 class RequestHandler(object):
 # RequestHandler是一个类，由于定义了__call__()方法，因此可以将其实例视为函数。
@@ -180,7 +180,8 @@ class RequestHandler(object):
                 # 当URL处理函数没有参数时，将request.match_info设为空，防止调用出错
                 request_content = dict()
             '''        
-            request_content = dict(**request.match_info) # request.match_info是一个dict
+            request_content = dict(**request.match_info) 
+            # request.match_info是一个dict 主要是保存像@get('/blog/{id}')里面的id，就是路由路径里的参数
             # 此时request_content指向match_info属性，一个变量标识符的名字的dict列表。Request中获取的命名关键字参数必须要在这个dict当中
             # request_content 不为空,且requesthandler只存在命名关键字的,则只取命名关键字参数名放入request_content
         else:
@@ -208,7 +209,8 @@ class RequestHandler(object):
             for name in self._required_kw_args:
                 if not name in request_content:
                     return web.HTTPBadRequest("Missing argument: %s" % name)
-        # 以上代码均是为了获取调用参数
+
+        # ---------------------------以上代码均是为了获取调用参数----------------------
         logging.info("call with args: %s" % str(request_content))
         
         # 以下调用handler处理,并返回response.
@@ -241,7 +243,8 @@ def add_route(app, fn):
         fn = asyncio.coroutine(fn)
     logging.info("add route %s %s => %s(%s)" % (method, path, fn.__name__, '. '.join(inspect.signature(fn).parameters.keys())))
     # eg-INFO:root:add route GET / => index(request)
-    # 注册request handler
+    # 正式注册为相应的url处理方法
+    # 处理方法为RequestHandler的自省函数 '__call__'
     app.router.add_route(method, path, RequestHandler(app, fn))
 
 # 自动注册所有请求处理函数（添加一个模块的所有路由）

@@ -11,7 +11,7 @@ import aiomysql
 def log(sql, args=()):
     logging.info('SQL: %s' % sql)
 
-#创建连接池，每个HTTP请求都可以从连接池中直接获取数据库连接。
+#创建连接池，(应用服务器和数据库) 每个HTTP请求都可以从连接池中直接获取数据库连接。
 #不必频繁地打开和关闭数据库连接
 async def create_pool(loop, **kw):
     logging.info('create database connection pool...')
