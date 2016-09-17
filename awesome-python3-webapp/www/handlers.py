@@ -153,6 +153,7 @@ def index(*, page='1'):
     }
 
 @get('/blog/{id}')
+@asyncio.coroutine
 def get_blog(id):
     blog = yield from Blog.find(id)
     comments = yield from Comment.findAll('blog_id=?', [id], orderBy='created_at desc')
@@ -292,6 +293,7 @@ def manage_comments(*, page='1'):
 
 
 @get('/api/comments')
+@asyncio.coroutine
 def api_comments(*, page='1'):
     # 根据page获取评论，注释可参考 index 函数的注释，不细写了
     page_index = get_page_index(page)
@@ -304,6 +306,7 @@ def api_comments(*, page='1'):
 
 
 @post('/api/blogs/{id}/comments')
+@asyncio.coroutine
 def api_create_comment(id, request, *, content):
     # 对某个博客发表评论
     user = request.__user__
@@ -327,6 +330,7 @@ def api_create_comment(id, request, *, content):
 
 
 @post('/api/comments/{id}/delete')
+@asyncio.coroutine
 def api_delete_comments(id, request):
     # 删除某个评论
     logging.info(id)
@@ -346,6 +350,7 @@ def api_delete_comments(id, request):
 
 
 @get('/show_all_users')
+@asyncio.coroutine
 def show_all_users():
     # 显示所有的用户
     users = yield from User.findAll()
@@ -359,6 +364,7 @@ def show_all_users():
 
 
 @get('/api/users')
+@asyncio.coroutine
 def api_get_users(request):
     # 返回所有的用户信息jason格式
     users = yield from User.findAll(orderBy='created_at desc')
@@ -399,6 +405,7 @@ def manage_blogs(*, page='1'):
 
 
 @get('/api/blogs')
+@asyncio.coroutine
 def api_blogs(*, page='1'):
     # 获取博客信息
     page_index = get_page_index(page)
@@ -411,6 +418,7 @@ def api_blogs(*, page='1'):
 
 
 @post('/api/blogs')
+@asyncio.coroutine
 def api_create_blog(request, *, name, summary, content):
     # 只有管理员可以写博客
     check_admin(request)
@@ -431,6 +439,7 @@ def api_create_blog(request, *, name, summary, content):
 
 
 @get('/blog/{id}')
+@asyncio.coroutine
 def get_blog(id):
     # 根据博客id查询该博客信息
     blog = yield from Blog.find(id)
@@ -449,6 +458,7 @@ def get_blog(id):
 
 
 @get('/api/blogs/{id}')
+@asyncio.coroutine
 def api_get_blog(*, id):
     # 获取某条博客的信息
     blog = yield from Blog.find(id)
@@ -456,6 +466,7 @@ def api_get_blog(*, id):
 
 
 @post('/api/blogs/{id}/delete')
+@asyncio.coroutine
 def api_delete_blog(id, request):
     # 删除一条博客
     logging.info("删除博客的博客ID为：%s" % id)
@@ -472,6 +483,7 @@ def api_delete_blog(id, request):
 
 
 @post('/api/blogs/modify')
+@asyncio.coroutine
 def api_modify_blog(request, *, id, name, summary, content):
     # 修改一条博客
     logging.info("修改的博客的博客ID为：%s", id)

@@ -10,9 +10,9 @@ var
     action = '{{ action }}';
 function initVM(blog) {
     var vm = new Vue({
-        el: '#vm',
-        data: blog,
-        methods: {
+        el: '#vm',   <!--el:根据选择器查找绑定的View -->
+        data: blog,  <!--data：JavaScript对象表示的Model -->
+        methods: {   <!--methods：View可以触发的JavaScript函数 -->
             submit: function (event) {
                 event.preventDefault();
                 var $form = $('#vm').find('form');
